@@ -12,17 +12,15 @@ import (
 	"regexp"
 	//"strings"
 	"strconv"
+	"sync"
 	//"time"
 )
 
 var p = fmt.Print
 var pL = fmt.Println //Alias for print Line
-//var boundDelimiter = "--video boundary--"
-//var boundDelimiter = "video"
-var url = "http://192.168.0.101:8101/video.cgi"
-//var url = "http://danasmikro.dlinkddns.com:8105/video.cgi"
-//var url = "http://casadecarnesdoge.dlinkddns.com:8107/video.cgi"
 var user = "admin"
+var pass = ""
+var wg sync.WaitGroup
 
 /*
 --video boundary--
@@ -31,77 +29,113 @@ Date: 11-17-2016 04:03:05 PM IO_00000000_PT_005_000
 Content-type: image/jpeg
 */
 
-func main() {
-	pL("Start!")
-	pass := os.Args[1]
-	//j := 0
-	//url := os.Args[1]
-	/*var url = "http://192.168.0.101:8101/video.cgi"
-	var user = "admin"
-	var pass = "DMKInfo2012"
-
+func goGetemAll(url, user, pass, basename string, n int) {
+	defer wg.Done()
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
-		//req.Header.Add("Authorization", "Basic YWRtaW46RE1LSW5mbzIwMTI=")
 	req.SetBasicAuth(user, pass)
 	resp, err := client.Do(req)
-	//resp, err := http.Get(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
 	contentType := resp.Header.Get("Content-Type")
-	pL(contentType)
-	pL(resp.Status)
-	pL(reflect.TypeOf(resp.Body))
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	pL(buf)*/
-	//	pL(resp.ContentLength)
+	boundaryRe := regexp.MustCompile(`^multipart/x-mixed-replace;boundary=(.*)$`)
+	boundary := boundaryRe.FindStringSubmatch(contentType)[1]
+	buffer := bufio.NewReader(resp.Body)
 
-	//boundaryRe := regexp.MustCompile(`^multipart/x-mixed-replace;boundary=(.*)$`)
-	//boundary := boundaryRe.FindStringSubmatch(contentType)[1]
-	//boundary := resp.Header.Get("Content-Type").FindStringSubmatch("--")
-	/*buffer := bufio.NewReader(resp.Body)
+	for j := 0; j < n; j++ {
+		p(basename + " run ")
+		pL(j)
 
-	delimiter := fmt.Sprintf("--%s\r\n", boundary)
-	data := make([]byte, 0)
-	for i := 0; i < 4; i++ {
-		buffer.ReadBytes('\n')
-	}
-
-	for {
-		line, _ := buffer.ReadBytes('\n')
-		found := bytes.HasSuffix(line, []byte(delimiter))
-		if found == true {
-			data = append(data, line[:(len(line)-len(delimiter))]...)
-			ioutil.WriteFile("frame.jpg", data, 0644)
-			break
-		} else {
-			data = append(data, line...)
+		//delimiter := fmt.Sprintf("--%s\r\n", boundary)
+		delimiter := "--" + boundary + "\r\n"
+		data := make([]byte, 0)
+		var imgSize int64
+		for i := 0; i < 4; i++ {
+			d, _ := buffer.ReadBytes('\n')
+			if j == 0 {		//Black magic
+				if i ==1 {	//Black magic
+					//Get the raw decimal numbers from Content-length and convert to int64
+					imgSize, _ = strconv.ParseInt(string(d[16:len(d)-2]), 10, 32)
+					/*
+					p("imgSize: ")
+					pL(imgSize)
+					*/
+				}
+			}else if i==0 {
+				imgSize, _ = strconv.ParseInt(string(d[16:len(d)-2]), 10, 32)
+				
+			}
 		}
-	}*/
+		p(basename + " imgSize: ")
+		pL(imgSize)
+		
+		for {
+			line, _ := buffer.ReadBytes('\n')
+			found := bytes.HasSuffix(line, []byte(delimiter))
+			if (string(line)) == "\r\n" {
+				continue
+			}
+			if found == true {
+				data = append(data, line[:(len(line)-len(delimiter))]...)
+				//strTime := t.Format("20060102150405.0000")
+				filename := basename + "_" + strconv.Itoa(j) + ".jpg"
+				ioutil.WriteFile(filename, data[:len(data)-2], 0644)
+				break
+			} else {
+				data = append(data, line...)
+			}
+		}
+	}
+	resp.Body.Close()
+}
 
-	/*resp, err := http.Get(os.Args[1])
-	if err != nil {
-		panic(err)
+func init() {
+	//url = os.Getenv("url")
+	/*if len(url) < 15 {
+		os.Exit(2)
+	}*/
+	pass = os.Getenv("pass")
+	if len(pass) < 1 {
+		os.Exit(2)
+	}
+}
+
+func main() {
+	pL("Start!")
+	var urls = []string{
+		"http://187.183.214.57:8101/video.cgi",
+		"http://187.183.214.57:8102/video.cgi",
+		"http://187.183.214.57:8103/video.cgi",
+		"http://187.183.214.57:8104/video.cgi",
+		"http://187.183.214.57:8105/video.cgi",
+		"http://187.183.214.57:8107/video.cgi",
+	}
+	var baseNames = []string{
+		"Camera01",
+		"Camera02",
+		"Camera03",
+		"Camera04",
+		"Camera05",
+		"Camera07",
+	}
+	for i, url := range urls{
+		wg.Add(1)
+		go goGetemAll(url, user, pass, baseNames[i], 5)
+	}
+	wg.Wait()
+}
+	/*for {
+		if done {
+			os.Exit(0)
+		}
 	}*/
 
 	//ticker := time.NewTicker(time.Millisecond * 1000)
 	//go func() {
 		//for t := range ticker.C {
 			//pL(t)
-			client := &http.Client{}
-			req, err := http.NewRequest("GET", url, nil)
-			//req.Header.Add("Authorization", "Basic YWRtaW46RE1LSW5mbzIwMTI=")
-			req.SetBasicAuth(user, pass)
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
-			contentType := resp.Header.Get("Content-Type")
-			boundaryRe := regexp.MustCompile(`^multipart/x-mixed-replace;boundary=(.*)$`)
-			boundary := boundaryRe.FindStringSubmatch(contentType)[1]
-			buffer := bufio.NewReader(resp.Body)
+			
 
 			/*fmt.Print("contentType: ")
 			pL(contentType)
@@ -120,69 +154,10 @@ func main() {
 			fmt.Print("buffer Type: ")
 			pL(reflect.TypeOf(buffer))*/
 
-			for j := 0; j < 30; j++ {
-			fmt.Print("Run ")
-			pL(j)
-
-			//delimiter := fmt.Sprintf("--%s\r\n", boundary)
-			delimiter := "--" + boundary + "\r\n"
-			data := make([]byte, 0)
-			for i := 0; i < 4; i++ {
-				d, _ := buffer.ReadBytes('\n')
-				//pL(string(d))
-				if j == 0 {
-					if i ==1 {
-						//Get the raw decimal numbers from Content-length and convert to int64
-						imgSize, _ := strconv.ParseInt(string(d[16:len(d)-2]), 10, 32)
-						p("imgSize: ")
-						pL(imgSize)
-					}
-				//"Content-length: "
-				//contentLenghtRe := regexp.MustCompile(`^Content-length: (.*)$`)
-				//contentLenght := contentLenghtRe.FindStringSubmatch(string(d))
-				//pL(contentLenght)
-				//if d[:14] == "Content-length" {
-					
-				}else if i==0 {
-					imgSize, _ := strconv.ParseInt(string(d[16:len(d)-2]), 10, 32)
-					p("imgSize: ")
-					pL(imgSize)
-				}
-			}
-			for {
-				line, _ := buffer.ReadBytes('\n')
-				found := bytes.HasSuffix(line, []byte(delimiter))
-				if (string(line)) == "\r\n" {
-					continue
-				}
-				if found == true {
-					data = append(data, line[:(len(line)-len(delimiter))]...)
-					//pL(string(j))
-					//strTime := t.Format("20060102150405.0000")
-					//filename := "Ge07_" + strconv.Itoa(j) + ".jpg"
-//					filename := "DanasMikro05_" + strconv.Itoa(j) + ".jpg"
-					//filename := "danasmikro05_" + strTime + ".jpg"
-					filename := "DMK01_" + strconv.Itoa(j) + ".jpg"
-					//pL(j)
-					//pL(reflect.TypeOf(j))
-					//pL(string(j))
-					//pL(reflect.TypeOf(string(j)))
-					//pL(filename)
-					ioutil.WriteFile(filename, data[:len(data)-2], 0644)
-					break
-				} else {
-					data = append(data, line...)
-					/*if linha1 {
-						data = data[2:]
-						linha1 = false
-					}*/
-				}
-			}
-			//resp.Body.Close()
+			
+			//
 			//j++
-		}
 	//}()
 	//time.Sleep(time.Millisecond * 62000)
     //ticker.Stop()
     //fmt.Println("Ticker stopped")
-}
